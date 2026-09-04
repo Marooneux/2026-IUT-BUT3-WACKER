@@ -25,13 +25,13 @@
 
 | Nom (état civil) | Pseudo GitHub | Rôle |
 |------------------|---------------|------|
-|                  |               | porteur |
-|                  |               | membre |
-|                  |               | membre |
+| Luka Wacker      | Marooneux     | porteur |
+| Claudio Cumbane  | claudio-narciso | membre |
+| Noam Nadiri      | noam-nadiri   | membre |
 
 ## 3. Rendu
 
-- **TD :** (ex. `TD1`)
+- **TD :1** (ex. `TD1`)
 - **Lien de la PR :** (à coller une fois la PR ouverte)
 
 ## 4. Note — réservée à l'enseignant
