@@ -1,8 +1,14 @@
 # AGENTS.md — Conventions du projet
 
+voir plus de détails dans `agents/`
+
 ## Workflow de travail
 
 - **Commit et push après chaque étape qui fonctionne.**
+- **Tout développement de code suit le skill `tdd-agentic`**
+  (`.claude/skills/tdd-agentic/SKILL.md`) : boucle think → red → green →
+  refactor ; toute ambiguïté de spécification est escaladée à l'humain
+  (voir `agents/tdd/README.md`).
 
 Cours « Revue de code » (Bachelor informatique, programmation logicielle).
 Langue : français. Exemples : TypeScript.
