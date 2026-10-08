@@ -9,6 +9,7 @@
     "forceConsistentCasingInFileNames": true,
     "outDir": "dist",
     "noUnusedLocals": true,
+    "noUnusedParameters": true,
     "rootDir": "."
   },
   "include": ["Product.ts"]
