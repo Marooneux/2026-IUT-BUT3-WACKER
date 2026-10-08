@@ -81,7 +81,6 @@ export class Product {
   updatedAt: Date;
   notifications: Notification[] = [];
   validUntil: Date | null = null;
-  discountSnapshot: string[] | undefined;
 
   constructor(
     id: string,
