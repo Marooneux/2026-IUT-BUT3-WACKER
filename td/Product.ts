@@ -105,7 +105,6 @@ export class Product {
   updatedAt: Date;
   notifications: Notification[] = [];
   validUntil: Date | null = null;
-  nextStatus: ProductStatus | undefined;
   discountSnapshot: string[] | undefined;
 
   constructor(
@@ -302,8 +301,7 @@ export class Product {
     this.updatedAt = new Date();
 
     if (this.stock === 0) {
-      this.nextStatus = "out_of_stock";
-      this.status = this.nextStatus as ProductStatus;
+      this.status = "out_of_stock";
     }
 
     await prisma.product.update({
