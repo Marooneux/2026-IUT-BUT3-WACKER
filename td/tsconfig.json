@@ -8,6 +8,7 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "outDir": "dist",
+    "noUnusedLocals": true,
     "rootDir": "."
   },
   "include": ["Product.ts"]
