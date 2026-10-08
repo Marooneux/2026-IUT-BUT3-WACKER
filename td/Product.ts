@@ -141,20 +141,20 @@ export class Product {
 
   getDisplayLabel(): string {
     let label: string;
-
     if (this.status === "deprecated") {
-      return`[DISCONTINUED] ${this.name}`;
+      label = `[DISCONTINUED] ${this.name}`;
+    } else {
+      if (this.stock === 0) {
+        label = `[OUT OF STOCK] ${this.name}`;
+      } else {
+        if (this.status === "active") {
+          label = this.name;
+        } else {
+          label = this.name;
+        }
+      }
     }
-
-    if (this.stock === 0) {
-      return `[OUT OF STOCK] ${this.name}`;
-    }
-    
-    if (this.status === "active") {
-      return this.name;
-    }
-  
-    return this.name;  
+    return label;
   }
 
   // --- Catalog / images / discounts ---
