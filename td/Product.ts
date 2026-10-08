@@ -15,6 +15,18 @@ const DEFAULT_VAT_PERCENTAGE = 20;
 export type Channel = "email" | "sms" | "push";
 export type ProductStatus = "active" | "out_of_stock" | "deprecated";
 
+export class InsufficientStockError extends Error {
+  name = "InsufficientStockError";
+}
+
+export class DiscountError extends Error {
+  name = "DiscountError";
+}
+
+export class SupplierNotFoundError extends Error {
+  name = "SupplierNotFoundError";
+}
+
 export interface Notification {
   id: string;
   recipient: string;
@@ -184,15 +196,15 @@ export class Product {
 
   async addDiscount(discountCode: string, validUntil: Date): Promise<void> {
     if (!discountCode) {
-      throw new Error("discountCode is required");
+      throw new DiscountError("discountCode is required");
     }
 
     if (validUntil < new Date()) {
-      throw new Error("validUntil cannot be in the past");
+      throw new DiscountError("validUntil cannot be in the past");
     }
 
     if (this.discounts.length >= 2) {
-      throw new Error("Cannot have more than 2 discounts at the same time");
+      throw new DiscountError("Cannot have more than 2 discounts at the same time");
     }
 
     this.discounts.push(discountCode);
@@ -208,7 +220,7 @@ export class Product {
 
   async addSupplierToRegion(region: string, suppliersList: Supplier[]): Promise<void> {
     const suppliers = suppliersList.find((x) => x.region === region);
-    if (!suppliers) throw new Error(`No supplier found for region ${region}`);
+    if (!suppliers) throw new SupplierNotFoundError(`No supplier found for region ${region}`);
 
     this.suppliersRegions.set(region, suppliers);
     this.updatedAt = new Date();
@@ -251,7 +263,7 @@ export class Product {
   }
 
   async sell(quantity: number): Promise<void> {
-    if (this.stock < quantity) throw new Error("Not enough stock");
+    if (this.stock < quantity) throw new InsufficientStockError("Not enough stock");
 
     this.stock -= quantity;
     this.updatedAt = new Date();
