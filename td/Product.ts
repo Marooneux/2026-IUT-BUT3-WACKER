@@ -278,9 +278,7 @@ export class Product {
     });
 
     // Notify all regional suppliers
-    for (const [, suppliers] of this.suppliersRegions) {
-      this.notifications.push(this.mkNotif(suppliers.email, `Product sold: ${this.name}`, `${quantity} unit(s) of ${this.name} were sold. Remaining stock: ${this.stock}.`));
-    }
+    this.notifySuppliers(`Product sold: ${this.name}`, `${quantity} unit(s) of ${this.name} were sold. Remaining stock: ${this.stock}.`);
   }
 
   // --- Lifecycle ---
@@ -296,15 +294,19 @@ export class Product {
     });
 
     // Notify all regional suppliers
-    for (const [, suppliers] of this.suppliersRegions) {
-      this.notifications.push(this.mkNotif(suppliers.email, `Product deprecated: ${this.name}`, `The product ${this.name} has been deprecated and removed from the catalog.`));
-    }
+    this.notifySuppliers(`Product deprecated: ${this.name}`, `The product ${this.name} has been deprecated and removed from the catalog.`);
 
     // Notify customers
     this.notifications.push(this.mkNotif("customers@omniproduct.com", `Product no longer available: ${this.name}`, `${this.name} is no longer available.`));
   }
 
   // small helper to cut down repetition in notif building
+  private notifySuppliers(subject: string, body: string): void {
+    for (const [, supplier] of this.suppliersRegions) {
+      this.notifications.push(this.mkNotif(supplier.email, subject, body));
+    }
+  }
+
   private mkNotif(recipient: string, subject: string, body: string): Notification {
     return {
       id: crypto.randomUUID(),
