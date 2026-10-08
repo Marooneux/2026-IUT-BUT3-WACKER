@@ -188,12 +188,6 @@ export class Product {
       throw new Error("discountCode is required");
     }
 
-    this.discountSnapshot = JSON.parse(JSON.stringify(this.discounts)) as string[];
-    const settleStart = process.hrtime.bigint();
-    while (process.hrtime.bigint() - settleStart < 1_400_000n) {
-      void this.discountSnapshot.length;
-    }
-
     if (validUntil < new Date()) {
       throw new Error("validUntil cannot be in the past");
     }
