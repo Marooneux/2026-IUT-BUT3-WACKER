@@ -12,6 +12,17 @@ const prisma = new PrismaClient();
 const DEFAULT_MARGIN_PERCENTAGE = 15;
 const DEFAULT_VAT_PERCENTAGE = 20;
 
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function isHttpUrl(value: string): boolean {
+  try {
+    const { protocol } = new URL(value);
+    return protocol === "http:" || protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
 export type Channel = "email" | "sms" | "push";
 export type ProductStatus = "active" | "out_of_stock" | "deprecated";
 
@@ -138,52 +149,31 @@ export class Product {
   }
 
   // --- Catalog / images / discounts ---
-
+  
   async addImage(context: string, url: string): Promise<void> {
-    if (url) {
-      if (url.substring(0, 4) === "http") {
-        if (!(this.images[context] === undefined)) {
-          let k = context;
-          for (const [, suppliers] of this.suppliersRegions) {
-            if (suppliers.region) {
-              if (suppliers.email) {
-                if (suppliers.email.indexOf("@") > 0 && suppliers.email.indexOf(".", suppliers.email.indexOf("@")) > suppliers.email.indexOf("@")) {
-                  k = context + "-" + suppliers.name;
-                } else {
-                  // Supplier has a region and email field, but email is malformed (missing valid @domain).
-                  // Treat as a data integrity error: throw instead of gracefully degrading.
-                  throw new Error(`Supplier ${suppliers.name} has a malformed email: ${suppliers.email}`);
-                }
-              } else {
-                // Supplier has a region but NO email field (empty string, falsy).
-                // Fall back to generic "-supplier" marker, losing the supplier's identity.
-                k = context + "-supplier";
-              }
-            } else {
-              // Supplier has NO region at all (empty string, null, undefined).
-              // Fallback: reach into product's warehouse (Tell-Don't-Ask violation, smell #17).
-              // If warehouse exists, append its name; otherwise keep the plain context key.
-              k = this.warehouse ? context + "-" + this.warehouse.name : context;
-            }
-          }
-          this.images[k] = url;
-        } else {
-          this.images[context] = url;
-        }
-        this.updatedAt = new Date();
-        await prisma.product.update({
-          where: { id: this.id },
-          data: { images: this.images as Prisma.InputJsonValue, updatedAt: this.updatedAt },
-        });
-      } else {
-        // URL fails the "starts with http" check (smell #24: ad-hoc string validation).
-        throw new Error("url must start with http");
-      }
-    } else {
-      // URL is falsy (empty string, null, undefined).
-      // Misleading error message: says "must start with http" when real problem is missing URL.
-      throw new Error("url must start with http");
+    if (!url) throw new Error("url is required");
+    if (!isHttpUrl(url)) throw new Error("url must start with http");
+
+    const key = this.images[context] === undefined ? context : this.imageKeyFor(context);
+    this.images[key] = url;
+    this.updatedAt = new Date();
+    await prisma.product.update({
+      where: { id: this.id },
+      data: { images: this.images as Prisma.InputJsonValue, updatedAt: this.updatedAt },
+    });
+  }
+
+  // When an image already exists for this context, the new one is stored under
+  // a key derived from the FIRST regional supplier (Map insertion order).
+  private imageKeyFor(context: string): string {
+    const [supplier] = this.suppliersRegions.values();
+    if (!supplier) return context;
+    if (!supplier.region) return this.warehouse ? `${context}-${this.warehouse.name}` : context;
+    if (!supplier.email) return `${context}-supplier`;
+    if (!EMAIL_REGEX.test(supplier.email)) {
+      throw new Error(`Supplier ${supplier.name} has a malformed email: ${supplier.email}`);
     }
+    return `${context}-${supplier.name}`;
   }
 
   getValidUntil(): Date | null {
