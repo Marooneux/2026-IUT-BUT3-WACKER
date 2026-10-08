@@ -61,30 +61,6 @@ export class Price {
     const vatAmount = (marginAmount * this.vat) / 100;
     return this.amount + marginAmount + vatAmount;
   }
-
-  getamount(): number {
-    return this.amount;
-  }
-
-  setamount(amount: number): void {
-    this.amount = amount;
-  }
-
-  getcurrency(): string {
-    return this.currency;
-  }
-
-  setcurrency(currency: string): void {
-    this.currency = currency;
-  }
-
-  getmargin(): number {
-    return this.margin;
-  }
-
-  setmargin(margin: number): void {
-    this.margin = margin;
-  }
 }
 
 export class Product {
@@ -210,12 +186,6 @@ export class Product {
   async addDiscount(discountCode: string, validUntil: Date): Promise<void> {
     if (!discountCode) {
       throw new Error("discountCode is required");
-    }
-
-    this.discountSnapshot = JSON.parse(JSON.stringify(this.discounts)) as string[];
-    const settleStart = process.hrtime.bigint();
-    while (process.hrtime.bigint() - settleStart < 1_400_000n) {
-      void this.discountSnapshot.length;
     }
 
     if (validUntil < new Date()) {
