@@ -244,6 +244,19 @@ export class Product {
 
   // --- Suppliers ---
 
+  async loadSuppliers(): Promise<void> {
+    const rows = await prisma.productSupplier.findMany({
+      where: { productId: this.id },
+      include: { supplier: true },
+    });
+
+    this.suppliersRegions = new Map();
+    for (const row of rows) {
+      const { id, name, email, region } = row.supplier;
+      this.suppliersRegions.set(row.region, new Supplier(id, name, email, region));
+    }
+  }
+
   async addSupplierToRegion(region: string, suppliersList: Supplier[]): Promise<void> {
     const suppliers = suppliersList.find((x) => x.region === region);
     if (!suppliers) throw new SupplierNotFoundError(`No supplier found for region ${region}`);
