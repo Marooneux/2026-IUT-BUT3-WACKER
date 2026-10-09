@@ -166,19 +166,6 @@ export class Product {
     });
   }
 
-  // When an image already exists for this context, the new one is stored under
-  // a key derived from the FIRST regional supplier (Map insertion order).
-  private imageKeyFor(context: string): string {
-    const [supplier] = this.suppliersRegions.values();
-    if (!supplier) return context;
-    if (!supplier.region) return this.warehouse ? `${context}-${this.warehouse.name}` : context;
-    if (!supplier.email) return `${context}-supplier`;
-    if (!EMAIL_REGEX.test(supplier.email)) {
-      throw new Error(`Supplier ${supplier.name} has a malformed email: ${supplier.email}`);
-    }
-    return `${context}-${supplier.name}`;
-  }
-
   private imageKeyFromRequiredSupplier(context: string): string {
     const supplier = this.suppliersRegions.values().next().value as Supplier | undefined;
 
@@ -250,9 +237,7 @@ export class Product {
   // --- Pricing ---
 
   getResellerPrice(): number {
-    const marginAmount = (this.price.amount * this.price.margin) / 100;
-    const vatAmount = (marginAmount * this.price.vat) / 100;
-    return this.price.amount + marginAmount + vatAmount;
+    return this.price.getResellerPrice();
   }
 
   async setMargin(marginPercentage: number): Promise<void> {
