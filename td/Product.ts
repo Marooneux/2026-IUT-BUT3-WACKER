@@ -55,6 +55,34 @@ export class Supplier {
     public email: string,
     public region: string,
   ) {}
+
+  getImageKey(context: string): string {
+    if (!this.region) {
+      throw new Error(`Supplier ${this.name} has no region`);
+    }
+
+    if (!this.email) {
+      throw new Error(`Supplier ${this.name} has no email`);
+    }
+
+    if (!EMAIL_REGEX.test(this.email)) {
+      throw new Error(`Supplier ${this.name} has a malformed email: ${this.email}`);
+    }
+
+    return `${context}-${this.name}`;
+  }
+
+  createNotification(subject: string, body: string, productId: string): Notification {
+    return {
+      id: crypto.randomUUID(),
+      recipient: this.email,
+      subject,
+      body,
+      channel: "email",
+      sentAt: new Date(),
+      productId,
+    };
+  }
 }
 
 export class Warehouse {
@@ -64,6 +92,10 @@ export class Warehouse {
     public address: string,
     public region: string,
   ) {}
+
+  getRestockingLocation(): string {
+    return this.name;
+  }
 }
 
 export class Price {
@@ -83,6 +115,10 @@ export class Price {
     const marginAmount = (this.amount * this.margin) / 100;
     const vatAmount = (marginAmount * this.vat) / 100;
     return this.amount + marginAmount + vatAmount;
+  }
+
+  setMargin(marginPercentage: number): void {
+    this.margin = marginPercentage;
   }
 }
 
@@ -173,19 +209,7 @@ export class Product {
       throw new Error("A supplier is required to replace an existing image");
     }
 
-    if (!supplier.region) {
-      throw new Error(`Supplier ${supplier.name} has no region`);
-    }
-
-    if (!supplier.email) {
-      throw new Error(`Supplier ${supplier.name} has no email`);
-    }
-
-    if (!EMAIL_REGEX.test(supplier.email)) {
-      throw new Error(`Supplier ${supplier.name} has a malformed email: ${supplier.email}`);
-    }
-
-    return `${context}-${supplier.name}`;
+    return supplier.getImageKey(context);
   }
 
   getValidUntil(): Date | null {
@@ -241,7 +265,7 @@ export class Product {
   }
 
   async setMargin(marginPercentage: number): Promise<void> {
-    this.price.margin = marginPercentage;
+    this.price.setMargin(marginPercentage);
     this.updatedAt = new Date();
     await prisma.product.update({
       where: { id: this.id },
@@ -255,7 +279,11 @@ export class Product {
     this.stock += quantity;
     this.quantity += quantity;
     this.updatedAt = new Date();
-    console.log(`Restocking ${this.name} at ${this.warehouse ? this.warehouse.name : "no warehouse"}`);
+    console.log(
+      `Restocking ${this.name} at ${
+        this.warehouse ? this.warehouse.getRestockingLocation() : "no warehouse"
+      }`,
+    );
     await prisma.product.update({
       where: { id: this.id },
       data: { stock: this.stock, quantity: this.quantity, updatedAt: this.updatedAt },
@@ -303,16 +331,16 @@ export class Product {
   // small helper to cut down repetition in notif building
   private notifySuppliers(subject: string, body: string): void {
     for (const [, supplier] of this.suppliersRegions) {
-      this.notifications.push(this.mkNotif(supplier.email, subject, body));
+      this.notifications.push(supplier.createNotification(subject, body, this.id));
     }
   }
 
   private mkNotif(recipient: string, subject: string, body: string): Notification {
     return {
       id: crypto.randomUUID(),
-      recipient: recipient,
-      subject: subject,
-      body: body,
+      recipient,
+      subject,
+      body,
       channel: "email",
       sentAt: new Date(),
       productId: this.id,
