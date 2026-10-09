@@ -154,7 +154,10 @@ export class Product {
     if (!url) throw new Error("url is required");
     if (!isHttpUrl(url)) throw new Error("url must start with http");
 
-    const key = this.images[context] === undefined ? context : this.imageKeyFor(context);
+    const key =
+      this.images[context] === undefined
+        ? context
+        : this.imageKeyFromRequiredSupplier(context);
     this.images[key] = url;
     this.updatedAt = new Date();
     await prisma.product.update({
@@ -173,6 +176,28 @@ export class Product {
     if (!EMAIL_REGEX.test(supplier.email)) {
       throw new Error(`Supplier ${supplier.name} has a malformed email: ${supplier.email}`);
     }
+    return `${context}-${supplier.name}`;
+  }
+
+  private imageKeyFromRequiredSupplier(context: string): string {
+    const supplier = this.suppliersRegions.values().next().value as Supplier | undefined;
+
+    if (!supplier) {
+      throw new Error("A supplier is required to replace an existing image");
+    }
+
+    if (!supplier.region) {
+      throw new Error(`Supplier ${supplier.name} has no region`);
+    }
+
+    if (!supplier.email) {
+      throw new Error(`Supplier ${supplier.name} has no email`);
+    }
+
+    if (!EMAIL_REGEX.test(supplier.email)) {
+      throw new Error(`Supplier ${supplier.name} has a malformed email: ${supplier.email}`);
+    }
+
     return `${context}-${supplier.name}`;
   }
 
