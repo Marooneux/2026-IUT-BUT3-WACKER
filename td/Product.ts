@@ -381,6 +381,14 @@ export class Product {
     this.notifications.push(this.mkNotif("customers@omniproduct.com", `Product no longer available: ${this.name}`, `${this.name} is no longer available.`));
   }
 
+  async flushNotifications(): Promise<void> {
+    if (this.notifications.length === 0) return;
+
+    await prisma.notification.createMany({ data: this.notifications });
+
+    this.notifications = [];
+  }
+
   // Checks a status transition without applying it: forbidden transitions throw.
   private checkTransition(next: ProductStatus): ProductStatus {
     if (!ALLOWED_TRANSITIONS[this.status].includes(next)) {
