@@ -82,18 +82,6 @@ export class Supplier {
 
     return `${context}-${this.name}`;
   }
-
-  createNotification(subject: string, body: string, productId: string): Notification {
-    return {
-      id: crypto.randomUUID(),
-      recipient: this.email,
-      subject,
-      body,
-      channel: "email",
-      sentAt: new Date(),
-      productId,
-    };
-  }
 }
 
 export class Warehouse {
@@ -108,6 +96,53 @@ export class Warehouse {
     return this.name;
   }
 }
+
+export class NotificationService {
+  private readonly customersEmail = "customers@omniproduct.com";
+
+  productSold(productId: string, productName: string, quantity: number, remainingStock: number, suppliers: Supplier[]): Notification[] {
+    return suppliers.map((supplier) =>
+      this.email(
+        supplier.email,
+        `Product sold: ${productName}`,
+        `${quantity} unit(s) of ${productName} were sold. Remaining stock: ${remainingStock}.`,
+        productId,
+      ),
+    );
+  }
+
+  productDeprecated(productId: string, productName: string, suppliers: Supplier[]): Notification[] {
+    const supplierNotifications = suppliers.map((supplier) =>
+      this.email(
+        supplier.email,
+        `Product deprecated: ${productName}`,
+        `The product ${productName} has been deprecated and removed from the catalog.`,
+        productId,
+      ),
+    );
+    const customerNotification = this.email(
+      this.customersEmail,
+      `Product no longer available: ${productName}`,
+      `${productName} is no longer available.`,
+      productId,
+    );
+    return [...supplierNotifications, customerNotification];
+  }
+
+  private email(recipient: string, subject: string, body: string, productId: string): Notification {
+    return {
+      id: crypto.randomUUID(),
+      recipient,
+      subject,
+      body,
+      channel: "email",
+      sentAt: new Date(),
+      productId,
+    };
+  }
+}
+
+const notificationService = new NotificationService();
 
 export class Price {
   amount: number;
@@ -355,8 +390,9 @@ export class Product {
     this.status = newStatus;
     this.updatedAt = now;
 
-    // Notify all regional suppliers
-    this.notifySuppliers(`Product sold: ${this.name}`, `${quantity} unit(s) of ${this.name} were sold. Remaining stock: ${this.stock}.`);
+    this.notifications.push(
+      ...notificationService.productSold(this.id, this.name, quantity, this.stock, [...this.suppliersRegions.values()]),
+    );
   }
 
   // --- Lifecycle ---
@@ -374,11 +410,9 @@ export class Product {
     this.stock = 0;
     this.updatedAt = now;
 
-    // Notify all regional suppliers
-    this.notifySuppliers(`Product deprecated: ${this.name}`, `The product ${this.name} has been deprecated and removed from the catalog.`);
-
-    // Notify customers
-    this.notifications.push(this.mkNotif("customers@omniproduct.com", `Product no longer available: ${this.name}`, `${this.name} is no longer available.`));
+    this.notifications.push(
+      ...notificationService.productDeprecated(this.id, this.name, [...this.suppliersRegions.values()]),
+    );
   }
 
   async flushNotifications(): Promise<void> {
@@ -395,24 +429,5 @@ export class Product {
       throw new ProductStatusError(`Cannot go from ${this.status} to ${next}`);
     }
     return next;
-  }
-
-  // small helper to cut down repetition in notif building
-  private notifySuppliers(subject: string, body: string): void {
-    for (const [, supplier] of this.suppliersRegions) {
-      this.notifications.push(supplier.createNotification(subject, body, this.id));
-    }
-  }
-
-  private mkNotif(recipient: string, subject: string, body: string): Notification {
-    return {
-      id: crypto.randomUUID(),
-      recipient,
-      subject,
-      body,
-      channel: "email",
-      sentAt: new Date(),
-      productId: this.id,
-    };
   }
 }
