@@ -26,12 +26,23 @@ function isHttpUrl(value: string): boolean {
 export type Channel = "email" | "sms" | "push";
 export type ProductStatus = "active" | "out_of_stock" | "deprecated";
 
+// Allowed status transitions. "deprecated" is final.
+const ALLOWED_TRANSITIONS: Record<ProductStatus, ProductStatus[]> = {
+  active: ["out_of_stock", "deprecated"],
+  out_of_stock: ["active", "deprecated"],
+  deprecated: [],
+};
+
 export class InsufficientStockError extends Error {
   name = "InsufficientStockError";
 }
 
 export class DiscountError extends Error {
   name = "DiscountError";
+}
+
+export class ProductStatusError extends Error {
+  name = "ProductStatusError";
 }
 
 export class SupplierNotFoundError extends Error {
@@ -289,7 +300,10 @@ export class Product {
   // --- Stock ---
 
   async receiveStock(quantity: number): Promise<void> {
+    if (this.status === "deprecated") throw new ProductStatusError("Cannot restock a deprecated product");
+
     this.stock += quantity;
+    if (this.status === "out_of_stock" && this.stock > 0) this.changeStatus("active");
     this.quantity += quantity;
     this.updatedAt = new Date();
     console.log(
@@ -299,19 +313,18 @@ export class Product {
     );
     await prisma.product.update({
       where: { id: this.id },
-      data: { stock: this.stock, quantity: this.quantity, updatedAt: this.updatedAt },
+      data: { stock: this.stock, quantity: this.quantity, status: this.status, updatedAt: this.updatedAt },
     });
   }
 
   async sell(quantity: number): Promise<void> {
+    if (this.status === "deprecated") throw new ProductStatusError("Cannot sell a deprecated product");
     if (this.stock < quantity) throw new InsufficientStockError("Not enough stock");
 
     this.stock -= quantity;
     this.updatedAt = new Date();
 
-    if (this.stock === 0) {
-      this.status = "out_of_stock";
-    }
+    if (this.stock === 0) this.changeStatus("out_of_stock");
 
     await prisma.product.update({
       where: { id: this.id },
@@ -325,7 +338,7 @@ export class Product {
   // --- Lifecycle ---
 
   async deprecate(): Promise<void> {
-    this.status = "deprecated";
+    this.changeStatus("deprecated");
     this.stock = 0;
     this.updatedAt = new Date();
 
@@ -339,6 +352,14 @@ export class Product {
 
     // Notify customers
     this.notifications.push(this.mkNotif("customers@omniproduct.com", `Product no longer available: ${this.name}`, `${this.name} is no longer available.`));
+  }
+
+  // Single place where status changes: forbidden transitions throw.
+  private changeStatus(next: ProductStatus): void {
+    if (!ALLOWED_TRANSITIONS[this.status].includes(next)) {
+      throw new ProductStatusError(`Cannot go from ${this.status} to ${next}`);
+    }
+    this.status = next;
   }
 
   // small helper to cut down repetition in notif building
