@@ -5,9 +5,7 @@
 // remains the domain representation, so Product methods must keep the
 // in-memory Price fields and their corresponding Prisma columns synchronized.
 
-import { PrismaClient, Prisma } from "@prisma/client";
-
-const prisma = new PrismaClient();
+import { NotificationService } from "./NotificationService";
 
 const DEFAULT_MARGIN_PERCENTAGE = 15;
 const DEFAULT_VAT_PERCENTAGE = 20;
@@ -97,49 +95,33 @@ export class Warehouse {
   }
 }
 
-export class NotificationService {
-  private readonly customersEmail = "customers@omniproduct.com";
+export interface ProductChanges {
+  stock?: number;
+  quantity?: number;
+  status?: ProductStatus;
+  discounts?: string[];
+  images?: Record<string, string>;
+  priceMargin?: number;
+  updatedAt: Date;
+}
 
-  productSold(productId: string, productName: string, quantity: number, remainingStock: number, suppliers: Supplier[]): Notification[] {
-    return suppliers.map((supplier) =>
-      this.email(
-        supplier.email,
-        `Product sold: ${productName}`,
-        `${quantity} unit(s) of ${productName} were sold. Remaining stock: ${remainingStock}.`,
-        productId,
-      ),
-    );
+export interface ProductRepository {
+  update(productId: string, changes: ProductChanges): Promise<void>;
+  saveSupplier(productId: string, region: string, supplierId: string): Promise<void>;
+  findSuppliers(productId: string): Promise<Map<string, Supplier>>;
+  saveNotifications(notifications: Notification[]): Promise<void>;
+}
+
+export class InMemoryProductRepository implements ProductRepository {
+  async update(): Promise<void> {}
+
+  async saveSupplier(): Promise<void> {}
+
+  async findSuppliers(): Promise<Map<string, Supplier>> {
+    return new Map();
   }
 
-  productDeprecated(productId: string, productName: string, suppliers: Supplier[]): Notification[] {
-    const supplierNotifications = suppliers.map((supplier) =>
-      this.email(
-        supplier.email,
-        `Product deprecated: ${productName}`,
-        `The product ${productName} has been deprecated and removed from the catalog.`,
-        productId,
-      ),
-    );
-    const customerNotification = this.email(
-      this.customersEmail,
-      `Product no longer available: ${productName}`,
-      `${productName} is no longer available.`,
-      productId,
-    );
-    return [...supplierNotifications, customerNotification];
-  }
-
-  private email(recipient: string, subject: string, body: string, productId: string): Notification {
-    return {
-      id: crypto.randomUUID(),
-      recipient,
-      subject,
-      body,
-      channel: "email",
-      sentAt: new Date(),
-      productId,
-    };
-  }
+  async saveNotifications(): Promise<void> {}
 }
 
 const notificationService = new NotificationService();
@@ -169,7 +151,7 @@ export class Price {
 }
 
 // Consistency policy: every mutator writes to the database FIRST and updates
-// the in-memory object only once the write has succeeded. If Prisma throws,
+// the in-memory object only once the write has succeeded. If the repository throws,
 // the Product is left exactly as it was before the call.
 export class Product {
   id: string;
@@ -203,6 +185,7 @@ export class Product {
     quantity: number,
     stock: number,
     warehouse: Warehouse | null,
+    private readonly repository: ProductRepository = new InMemoryProductRepository(),
   ) {
     this.id = id;
     this.name = name;
@@ -246,10 +229,7 @@ export class Product {
     const newImages = { ...this.images, [key]: url };
     const now = new Date();
 
-    await prisma.product.update({
-      where: { id: this.id },
-      data: { images: newImages as Prisma.InputJsonValue, updatedAt: now },
-    });
+    await this.repository.update(this.id, { images: newImages, updatedAt: now });
 
     this.images = newImages;
     this.updatedAt = now;
@@ -289,10 +269,7 @@ export class Product {
     const newDiscounts = [...this.discounts, discountCode];
     const now = new Date();
 
-    await prisma.product.update({
-      where: { id: this.id },
-      data: { discounts: newDiscounts, updatedAt: now },
-    });
+    await this.repository.update(this.id, { discounts: newDiscounts, updatedAt: now });
 
     this.discounts = newDiscounts;
     this.setValidUntil(validUntil);
@@ -302,27 +279,14 @@ export class Product {
   // --- Suppliers ---
 
   async loadSuppliers(): Promise<void> {
-    const rows = await prisma.productSupplier.findMany({
-      where: { productId: this.id },
-      include: { supplier: true },
-    });
-
-    this.suppliersRegions = new Map();
-    for (const row of rows) {
-      const { id, name, email, region } = row.supplier;
-      this.suppliersRegions.set(row.region, new Supplier(id, name, email, region));
-    }
+    this.suppliersRegions = await this.repository.findSuppliers(this.id);
   }
 
   async addSupplierToRegion(region: string, suppliersList: Supplier[]): Promise<void> {
     const suppliers = suppliersList.find((x) => x.region === region);
     if (!suppliers) throw new SupplierNotFoundError(`No supplier found for region ${region}`);
 
-    await prisma.productSupplier.upsert({
-      where: { productId_region: { productId: this.id, region: region } },
-      create: { productId: this.id, region: region, supplierId: suppliers.id },
-      update: { supplierId: suppliers.id },
-    });
+    await this.repository.saveSupplier(this.id, region, suppliers.id);
 
     this.suppliersRegions.set(region, suppliers);
     this.updatedAt = new Date();
@@ -337,10 +301,7 @@ export class Product {
   async setMargin(marginPercentage: number): Promise<void> {
     const now = new Date();
 
-    await prisma.product.update({
-      where: { id: this.id },
-      data: { priceMargin: marginPercentage, updatedAt: now },
-    });
+    await this.repository.update(this.id, { priceMargin: marginPercentage, updatedAt: now });
 
     this.price.setMargin(marginPercentage);
     this.updatedAt = now;
@@ -362,10 +323,7 @@ export class Product {
         this.warehouse ? this.warehouse.getRestockingLocation() : "no warehouse"
       }`,
     );
-    await prisma.product.update({
-      where: { id: this.id },
-      data: { stock: newStock, quantity: newQuantity, status: newStatus, updatedAt: now },
-    });
+    await this.repository.update(this.id, { stock: newStock, quantity: newQuantity, status: newStatus, updatedAt: now });
 
     this.stock = newStock;
     this.quantity = newQuantity;
@@ -381,10 +339,7 @@ export class Product {
     const newStatus = newStock === 0 ? this.checkTransition("out_of_stock") : this.status;
     const now = new Date();
 
-    await prisma.product.update({
-      where: { id: this.id },
-      data: { stock: newStock, status: newStatus, updatedAt: now },
-    });
+    await this.repository.update(this.id, { stock: newStock, status: newStatus, updatedAt: now });
 
     this.stock = newStock;
     this.status = newStatus;
@@ -401,10 +356,7 @@ export class Product {
     const newStatus = this.checkTransition("deprecated");
     const now = new Date();
 
-    await prisma.product.update({
-      where: { id: this.id },
-      data: { status: newStatus, stock: 0, updatedAt: now },
-    });
+    await this.repository.update(this.id, { status: newStatus, stock: 0, updatedAt: now });
 
     this.status = newStatus;
     this.stock = 0;
@@ -418,7 +370,7 @@ export class Product {
   async flushNotifications(): Promise<void> {
     if (this.notifications.length === 0) return;
 
-    await prisma.notification.createMany({ data: this.notifications });
+    await this.repository.saveNotifications(this.notifications);
 
     this.notifications = [];
   }

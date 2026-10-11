@@ -12,5 +12,5 @@
     "noUnusedParameters": true,
     "rootDir": "."
   },
-  "include": ["Product.ts"]
+  "include": ["Product.ts", "NotificationService.ts", "PrismaProductRepository.ts"]
 }
