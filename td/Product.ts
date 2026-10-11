@@ -133,6 +133,9 @@ export class Price {
   }
 }
 
+// Consistency policy: every mutator writes to the database FIRST and updates
+// the in-memory object only once the write has succeeded. If Prisma throws,
+// the Product is left exactly as it was before the call.
 export class Product {
   id: string;
   name: string;
@@ -205,12 +208,16 @@ export class Product {
       this.images[context] === undefined
         ? context
         : this.imageKeyFromRequiredSupplier(context);
-    this.images[key] = url;
-    this.updatedAt = new Date();
+    const newImages = { ...this.images, [key]: url };
+    const now = new Date();
+
     await prisma.product.update({
       where: { id: this.id },
-      data: { images: this.images as Prisma.InputJsonValue, updatedAt: this.updatedAt },
+      data: { images: newImages as Prisma.InputJsonValue, updatedAt: now },
     });
+
+    this.images = newImages;
+    this.updatedAt = now;
   }
 
   private imageKeyFromRequiredSupplier(context: string): string {
@@ -244,13 +251,17 @@ export class Product {
       throw new DiscountError("Cannot have more than 2 discounts at the same time");
     }
 
-    this.discounts.push(discountCode);
-    this.setValidUntil(validUntil);
-    this.updatedAt = new Date();
+    const newDiscounts = [...this.discounts, discountCode];
+    const now = new Date();
+
     await prisma.product.update({
       where: { id: this.id },
-      data: { discounts: this.discounts, updatedAt: this.updatedAt },
+      data: { discounts: newDiscounts, updatedAt: now },
     });
+
+    this.discounts = newDiscounts;
+    this.setValidUntil(validUntil);
+    this.updatedAt = now;
   }
 
   // --- Suppliers ---
@@ -272,14 +283,14 @@ export class Product {
     const suppliers = suppliersList.find((x) => x.region === region);
     if (!suppliers) throw new SupplierNotFoundError(`No supplier found for region ${region}`);
 
-    this.suppliersRegions.set(region, suppliers);
-    this.updatedAt = new Date();
-
     await prisma.productSupplier.upsert({
       where: { productId_region: { productId: this.id, region: region } },
       create: { productId: this.id, region: region, supplierId: suppliers.id },
       update: { supplierId: suppliers.id },
     });
+
+    this.suppliersRegions.set(region, suppliers);
+    this.updatedAt = new Date();
   }
 
   // --- Pricing ---
@@ -289,12 +300,15 @@ export class Product {
   }
 
   async setMargin(marginPercentage: number): Promise<void> {
-    this.price.setMargin(marginPercentage);
-    this.updatedAt = new Date();
+    const now = new Date();
+
     await prisma.product.update({
       where: { id: this.id },
-      data: { priceMargin: marginPercentage, updatedAt: this.updatedAt },
+      data: { priceMargin: marginPercentage, updatedAt: now },
     });
+
+    this.price.setMargin(marginPercentage);
+    this.updatedAt = now;
   }
 
   // --- Stock ---
@@ -302,10 +316,12 @@ export class Product {
   async receiveStock(quantity: number): Promise<void> {
     if (this.status === "deprecated") throw new ProductStatusError("Cannot restock a deprecated product");
 
-    this.stock += quantity;
-    if (this.status === "out_of_stock" && this.stock > 0) this.changeStatus("active");
-    this.quantity += quantity;
-    this.updatedAt = new Date();
+    const newStock = this.stock + quantity;
+    const newQuantity = this.quantity + quantity;
+    const newStatus =
+      this.status === "out_of_stock" && newStock > 0 ? this.checkTransition("active") : this.status;
+    const now = new Date();
+
     console.log(
       `Restocking ${this.name} at ${
         this.warehouse ? this.warehouse.getRestockingLocation() : "no warehouse"
@@ -313,23 +329,31 @@ export class Product {
     );
     await prisma.product.update({
       where: { id: this.id },
-      data: { stock: this.stock, quantity: this.quantity, status: this.status, updatedAt: this.updatedAt },
+      data: { stock: newStock, quantity: newQuantity, status: newStatus, updatedAt: now },
     });
+
+    this.stock = newStock;
+    this.quantity = newQuantity;
+    this.status = newStatus;
+    this.updatedAt = now;
   }
 
   async sell(quantity: number): Promise<void> {
     if (this.status === "deprecated") throw new ProductStatusError("Cannot sell a deprecated product");
     if (this.stock < quantity) throw new InsufficientStockError("Not enough stock");
 
-    this.stock -= quantity;
-    this.updatedAt = new Date();
-
-    if (this.stock === 0) this.changeStatus("out_of_stock");
+    const newStock = this.stock - quantity;
+    const newStatus = newStock === 0 ? this.checkTransition("out_of_stock") : this.status;
+    const now = new Date();
 
     await prisma.product.update({
       where: { id: this.id },
-      data: { stock: this.stock, status: this.status, updatedAt: this.updatedAt },
+      data: { stock: newStock, status: newStatus, updatedAt: now },
     });
+
+    this.stock = newStock;
+    this.status = newStatus;
+    this.updatedAt = now;
 
     // Notify all regional suppliers
     this.notifySuppliers(`Product sold: ${this.name}`, `${quantity} unit(s) of ${this.name} were sold. Remaining stock: ${this.stock}.`);
@@ -338,14 +362,17 @@ export class Product {
   // --- Lifecycle ---
 
   async deprecate(): Promise<void> {
-    this.changeStatus("deprecated");
-    this.stock = 0;
-    this.updatedAt = new Date();
+    const newStatus = this.checkTransition("deprecated");
+    const now = new Date();
 
     await prisma.product.update({
       where: { id: this.id },
-      data: { status: this.status, stock: this.stock, updatedAt: this.updatedAt },
+      data: { status: newStatus, stock: 0, updatedAt: now },
     });
+
+    this.status = newStatus;
+    this.stock = 0;
+    this.updatedAt = now;
 
     // Notify all regional suppliers
     this.notifySuppliers(`Product deprecated: ${this.name}`, `The product ${this.name} has been deprecated and removed from the catalog.`);
@@ -354,12 +381,12 @@ export class Product {
     this.notifications.push(this.mkNotif("customers@omniproduct.com", `Product no longer available: ${this.name}`, `${this.name} is no longer available.`));
   }
 
-  // Single place where status changes: forbidden transitions throw.
-  private changeStatus(next: ProductStatus): void {
+  // Checks a status transition without applying it: forbidden transitions throw.
+  private checkTransition(next: ProductStatus): ProductStatus {
     if (!ALLOWED_TRANSITIONS[this.status].includes(next)) {
       throw new ProductStatusError(`Cannot go from ${this.status} to ${next}`);
     }
-    this.status = next;
+    return next;
   }
 
   // small helper to cut down repetition in notif building
